@@ -239,3 +239,83 @@ export async function countActiveMatchesForUser(uid: string): Promise<number> {
   })
   return count
 }
+
+export async function getDonorByUid(uid: string): Promise<{ uid: string } & DonorProfile | null> {
+  try {
+    // First try to get from the public collection (for matching purposes)
+    const publicRef = doc(db, "donorsPublic", uid);
+    const publicSnap = await getDoc(publicRef);
+
+    if (publicSnap.exists()) {
+      return { uid, ...publicSnap.data() } as { uid: string } & DonorProfile;
+    }
+
+    // If not found in public collection, try the main collection
+    const mainRef = doc(db, "donors", uid);
+    const mainSnap = await getDoc(mainRef);
+
+    if (mainSnap.exists()) {
+      const data = mainSnap.data();
+
+      // Create a public representation if needed
+      const publicData = {
+        email: data.email || "",
+        bloodType: data.bloodType || "",
+        organs: Array.isArray(data.organs) ? data.organs : [],
+        dateOfBirth: data.dateOfBirth || null,
+        updatedAt: data.updatedAt || Date.now(),
+        createdAt: data.createdAt || Date.now(),
+      };
+
+      // Save to public collection for future matching
+      await setDoc(publicRef, publicData, { merge: true });
+
+      return { uid, ...data } as { uid: string } & DonorProfile;
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error getting donor by UID:", error);
+    return null;
+  }
+}
+
+export async function getRecipientByUid(uid: string): Promise<{ uid: string } & RecipientProfile | null> {
+  try {
+    // First try to get from the public collection (for matching purposes)
+    const publicRef = doc(db, "recipientsPublic", uid);
+    const publicSnap = await getDoc(publicRef);
+
+    if (publicSnap.exists()) {
+      return { uid, ...publicSnap.data() } as { uid: string } & RecipientProfile;
+    }
+
+    // If not found in public collection, try the main collection
+    const mainRef = doc(db, "recipients", uid);
+    const mainSnap = await getDoc(mainRef);
+
+    if (mainSnap.exists()) {
+      const data = mainSnap.data();
+
+      // Create a public representation if needed
+      const publicData = {
+        email: data.email || "",
+        bloodType: data.bloodType || null,
+        organNeeded: data.organNeeded || "",
+        dateOfBirth: data.dateOfBirth || null,
+        updatedAt: data.updatedAt || Date.now(),
+        createdAt: data.createdAt || Date.now(),
+      };
+
+      // Save to public collection for future matching
+      await setDoc(publicRef, publicData, { merge: true });
+
+      return { uid, ...data } as { uid: string } & RecipientProfile;
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Error getting recipient by UID:", error);
+    return null;
+  }
+}

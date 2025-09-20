@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -28,8 +28,15 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
-  const { signInWithEmail, signInWithGoogle } = useAuth();
+  const { user, signInWithEmail, signInWithGoogle } = useAuth();
   const router = useRouter();
+
+  // If already authenticated, do not show login page
+  useEffect(() => {
+    if (user) {
+      router.replace("/dashboard");
+    }
+  }, [user, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,6 +60,19 @@ export default function LoginPage() {
       .catch((err) => setError(err?.message || "Google sign-in failed"))
       .finally(() => setIsLoading(false));
   };
+
+  // Avoid flashing the login form if user is already authenticated
+  if (user) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <div className="container mx-auto px-4 py-16">
+          <p className="text-sm text-muted-foreground">Redirecting to your dashboard…</p>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

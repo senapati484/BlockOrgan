@@ -26,6 +26,9 @@ export default function DashboardPage() {
   const [donorProfile, setDonorProfile] = useState<any | null>(null)
   const [recipientProfile, setRecipientProfile] = useState<any | null>(null)
   const [activeMatchList, setActiveMatchList] = useState<any[]>([])
+  const [verified, setVerified] = useState<boolean | null>(null)
+  const [verifyTx, setVerifyTx] = useState<string | null>(null)
+  const explorerBase = process.env.NEXT_PUBLIC_AVALANCHE_EXPLORER_BASE as string | undefined
 
   useEffect(() => {
     let cancelled = false
@@ -36,12 +39,14 @@ export default function DashboardPage() {
           return
         }
         // Try donor then recipient
+        let roleDetected: "donor" | "recipient" | "admin" = "admin"
         const donor = await getDonorProfile(user.uid)
         if (donor) {
           if (!cancelled) {
             setUserRole("donor")
             setDisplayName(`${donor.firstName || ""} ${donor.lastName || ""}`.trim() || (user.displayName || ""))
             setDonorProfile(donor)
+            roleDetected = "donor"
           }
         } else {
           const recipient = await getRecipientProfile(user.uid)
@@ -50,19 +55,36 @@ export default function DashboardPage() {
               setUserRole("recipient")
               setDisplayName(`${recipient.firstName || ""} ${recipient.lastName || ""}`.trim() || (user.displayName || ""))
               setRecipientProfile(recipient)
+              roleDetected = "recipient"
             }
           } else {
             if (!cancelled) {
               setUserRole("admin")
               setDisplayName(user.displayName || user.email || "User")
+              roleDetected = "admin"
             }
           }
         }
         // Register/update minimal user record
         try {
-          await fetch('/api/users/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: user.uid, email: user.email, role: donor ? 'donor' : (recipient ? 'recipient' : 'admin') }) })
+          const res = await fetch('/api/users/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: user.uid, email: user.email, role: roleDetected }) })
+          const data = await res.json().catch(() => ({} as any))
+          if (!cancelled) {
+            if (data && typeof data.onChain === 'boolean') setVerified(data.onChain)
+            if (data && typeof data.txHash === 'string') setVerifyTx(data.txHash)
+          }
         } catch (e) {
           console.warn('user register failed', e)
+        }
+        // Fallback: verify via API if unknown
+        if (!cancelled && verified === null) {
+          try {
+            const vres = await fetch('/api/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: user.uid }) })
+            const vdata = await vres.json().catch(() => ({} as any))
+            if (typeof vdata.exists === 'boolean') setVerified(vdata.exists)
+          } catch (e) {
+            console.warn('verify failed', e)
+          }
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -138,7 +160,7 @@ export default function DashboardPage() {
 
   const stats = [
     { label: "Organs Registered", value: statsLoading ? "—" : String(organsCount), icon: Heart, color: "text-primary" },
-    { label: "Verification Status", value: "Verified", icon: Shield, color: "text-success" },
+    { label: "Verification Status", value: verified === null ? "Checking…" : verified ? "Verified" : "Not Verified", icon: Shield, color: verified ? "text-success" : "text-destructive" },
     { label: "Active Matches", value: statsLoading ? "—" : String(activeMatches), icon: Users, color: "text-warning" },
     { label: "Lives Impacted", value: statsLoading ? "—" : String(activeMatches), icon: Activity, color: "text-chart-1" },
   ]
@@ -205,9 +227,9 @@ export default function DashboardPage() {
                 <Badge variant="secondary" className="capitalize">
                   {userRole || "user"}
                 </Badge>
-                <Badge variant="outline" className="text-success border-success">
+                <Badge variant={verified ? "outline" : "destructive"} className={verified ? "text-success border-success" : ""}>
                   <Shield className="h-3 w-3 mr-1" />
-                  Verified
+                  {verified === null ? "Checking…" : verified ? "Verified" : "Not Verified"}
                 </Badge>
               </div>
             </div>
@@ -344,18 +366,58 @@ export default function DashboardPage() {
                     <CardDescription>Your donation registration is secured on the blockchain</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="flex items-center space-x-3 p-4 bg-success/5 border border-success/20 rounded-lg">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-success/10">
-                        <Shield className="h-5 w-5 text-success" />
+                    {verified === null ? (
+                      <div className="flex items-center space-x-3 p-4 bg-muted/5 border border-muted/20 rounded-lg">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted/10">
+                          <Shield className="h-5 w-5 text-muted" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-muted">Checking...</p>
+                          <p className="text-sm text-muted-foreground">Verifying your registration on the blockchain...</p>
+                        </div>
                       </div>
-                      <div className="flex-1">
-                        <p className="font-medium text-success">Fully Verified</p>
-                        <p className="text-sm text-muted-foreground">Transaction ID: 0x1a2b3c4d5e6f7890abcdef</p>
+                    ) : verified ? (
+                      <div className="flex items-center space-x-3 p-4 bg-success/5 border border-success/20 rounded-lg">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-success/10">
+                          <Shield className="h-5 w-5 text-success" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-success">Verified on-chain</p>
+                          <p className="text-sm text-muted-foreground truncate">{verifyTx ? `Tx: ${verifyTx}` : "Registered (tx pending or unknown)"}</p>
+                        </div>
+                        {verifyTx && explorerBase ? (
+                          <Button asChild variant="outline" size="sm" title="Open in explorer">
+                            <a href={`${explorerBase.replace(/\/$/, '')}/tx/${verifyTx}`} target="_blank" rel="noreferrer">View on Chain</a>
+                          </Button>
+                        ) : (
+                          <Button variant="outline" size="sm" disabled title={verifyTx ? "Set NEXT_PUBLIC_AVALANCHE_EXPLORER_BASE to enable link" : "No transaction hash available"}>
+                            View on Chain
+                          </Button>
+                        )}
                       </div>
-                      <Button variant="outline" size="sm">
-                        View on Chain
-                      </Button>
-                    </div>
+                    ) : (
+                      <div className="flex items-center space-x-3 p-4 bg-destructive/5 border border-destructive/20 rounded-lg">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-destructive/10">
+                          <Shield className="h-5 w-5 text-destructive" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-destructive">Not verified on-chain</p>
+                          <p className="text-sm text-muted-foreground">Your UID has not been found on the blockchain yet.</p>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={async () => {
+                          if (!user) return
+                          try {
+                            const vres = await fetch('/api/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: user.uid }) })
+                            const vdata = await vres.json().catch(() => ({} as any))
+                            if (typeof vdata.exists === 'boolean') setVerified(vdata.exists)
+                          } catch (e) {
+                            console.warn('manual verify failed', e)
+                          }
+                        }}>
+                          Verify Now
+                        </Button>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>

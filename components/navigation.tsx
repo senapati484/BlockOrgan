@@ -12,7 +12,9 @@ import { getUserPublicRole } from "@/lib/db";
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
   const { user, signOut } = useAuth();
-  const [role, setRole] = useState<"admin" | "donor" | "recipient" | null>(null);
+  const [role, setRole] = useState<"admin" | "donor" | "recipient" | null>(
+    null
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -29,13 +31,16 @@ export function Navigation() {
       }
     }
     loadRole();
-    return () => { cancelled = true };
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   const navItems = [
     { href: "/how-it-works", label: "How It Works", icon: Shield },
     { href: "/about", label: "About", icon: Heart },
     { href: "/contact", label: "Contact", icon: Users },
+    { href: "/privacy", label: "Privacy", icon: Users },
     ...(user
       ? [{ href: "/dashboard", label: "Dashboard", icon: BarChart3 }]
       : []),

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { doc, setDoc } from "firebase/firestore"
 import { db } from "@/lib/firebase"
+import { registerUserOnChain, verifyUserOnChain } from "@/lib/chain"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -26,7 +27,23 @@ export async function POST(req: NextRequest) {
     const ref = doc(db, "usersPublic", uid)
     await setDoc(ref, { uid, email, role, createdAt: now, updatedAt: now }, { merge: true })
 
-    return NextResponse.json({ ok: true })
+    // Try to ensure the user exists on-chain
+    let onChain = false
+    let txHash: string | undefined
+    let chainError: string | undefined
+    try {
+      onChain = await verifyUserOnChain(uid)
+      if (!onChain) {
+        const { txHash: hash } = await registerUserOnChain(uid)
+        txHash = hash
+        onChain = true
+      }
+    } catch (e: any) {
+      console.error("/api/users/register chain error", e)
+      chainError = e?.message || "chain error"
+    }
+
+    return NextResponse.json({ ok: true, onChain, txHash, chainError })
   } catch (e: any) {
     console.error("/api/users/register error", e)
     return NextResponse.json({ ok: false, error: e?.message || "register failed" }, { status: 500 })
