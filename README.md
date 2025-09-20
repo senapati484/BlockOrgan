@@ -101,7 +101,7 @@ A blockchain-verified organ donation matching platform that connects donors with
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/blockorgan.git
+git clone https://github.com/senapati484/blockorgan.git
 cd blockorgan
 
 # Install dependencies
