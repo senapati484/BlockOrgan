@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Navigation } from "@/components/navigation"
 import { Footer } from "@/components/footer"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,9 +10,51 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Progress } from "@/components/ui/progress"
 import { Users, Heart, Activity, TrendingUp, AlertTriangle, CheckCircle, Clock, BarChart3, Shield } from "lucide-react"
+import { useAuth } from "@/components/auth-provider"
+import { getUserPublicRole } from "@/lib/db"
+import { useRouter } from "next/navigation"
 
 export default function AdminDashboardPage() {
   const [timeRange, setTimeRange] = useState("30d")
+  const { user } = useAuth()
+  const router = useRouter()
+  const [allowed, setAllowed] = useState<boolean>(false)
+  const [checking, setChecking] = useState<boolean>(true)
+
+  useEffect(() => {
+    let cancelled = false
+    async function check() {
+      try {
+        if (!user) {
+          router.replace("/login")
+          return
+        }
+        const role = await getUserPublicRole(user.uid)
+        if (!cancelled) {
+          if (role === "admin") setAllowed(true)
+          else router.replace("/dashboard")
+        }
+      } finally {
+        if (!cancelled) setChecking(false)
+      }
+    }
+    check()
+    return () => { cancelled = true }
+  }, [user, router])
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <div className="container mx-auto px-4 py-8">
+          <p className="text-sm text-muted-foreground">Checking admin access…</p>
+        </div>
+        <Footer />
+      </div>
+    )
+  }
+
+  if (!allowed) return null
 
   const systemStats = [
     { label: "Total Users", value: "12,847", change: "+12%", icon: Users, color: "text-primary" },

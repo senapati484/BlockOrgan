@@ -13,7 +13,7 @@ export default function AboutPage() {
   return (
     <div className="bg-background">
       <Navigation />
-      <section className="container mx-auto px-4 py-16 h-screen">
+      <section className="container mx-auto px-4 py-16 h-[calc(100vh-16rem)]">
         <div className="text-center max-w-3xl mx-auto mb-12 space-y-4">
           <h1 className="text-3xl md:text-4xl font-bold">About LifeChain</h1>
           <p className="text-muted-foreground text-lg">

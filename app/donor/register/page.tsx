@@ -15,7 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Heart, User, FileText, Shield, CheckCircle, ArrowLeft, ArrowRight, AlertCircle } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
-import { saveDonorProfile } from "@/lib/db"
+import { assertNoExistingRegistration, saveDonorProfile } from "@/lib/db"
 import { useRouter } from "next/navigation"
 
 interface FormData {
@@ -118,11 +118,17 @@ export default function DonorRegistrationPage() {
         router.push("/login")
         return
       }
+      // Prevent duplicate registration across roles
+      await assertNoExistingRegistration(user.uid)
       const payload = { ...formData, role: "donor", uid: user.uid, email: formData.email || user.email }
       await saveDonorProfile(user.uid, payload)
       router.push("/donor/profile")
     } catch (e: any) {
-      setError(e?.message || "Failed to save registration")
+      if (e?.code === "already-registered") {
+        setError(e.message)
+      } else {
+        setError(e?.message || "Failed to save registration")
+      }
     } finally {
       setIsLoading(false)
     }

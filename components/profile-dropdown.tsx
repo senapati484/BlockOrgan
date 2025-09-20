@@ -1,7 +1,6 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
@@ -9,7 +8,6 @@ import { Settings, LogOut, User } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
 
 export function ProfileDropdown() {
-  const [open, setOpen] = useState(false)
   const { user, signOut } = useAuth()
   const displayName = user?.displayName || user?.email?.split("@")[0] || "User"
   const email = user?.email || ""
@@ -20,7 +18,7 @@ export function ProfileDropdown() {
     .slice(0, 2)
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="px-2">
           <div className="flex items-center space-x-2">
@@ -67,3 +65,4 @@ export function ProfileDropdown() {
     </DropdownMenu>
   )
 }
+

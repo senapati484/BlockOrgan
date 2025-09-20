@@ -1,21 +1,47 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Menu, Heart, Shield, Users } from "lucide-react";
+import { Menu, Heart, Shield, Users, BarChart3 } from "lucide-react";
 import { ProfileDropdown } from "@/components/profile-dropdown";
 import { useAuth } from "@/components/auth-provider";
+import { getUserPublicRole } from "@/lib/db";
 
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
   const { user, signOut } = useAuth();
+  const [role, setRole] = useState<"admin" | "donor" | "recipient" | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadRole() {
+      if (!user) {
+        if (!cancelled) setRole(null);
+        return;
+      }
+      try {
+        const r = await getUserPublicRole(user.uid);
+        if (!cancelled) setRole(r);
+      } catch {
+        if (!cancelled) setRole(null);
+      }
+    }
+    loadRole();
+    return () => { cancelled = true };
+  }, [user]);
 
   const navItems = [
     { href: "/how-it-works", label: "How It Works", icon: Shield },
     { href: "/about", label: "About", icon: Heart },
     { href: "/contact", label: "Contact", icon: Users },
+    ...(user
+      ? [{ href: "/dashboard", label: "Dashboard", icon: BarChart3 }]
+      : []),
+    ...(user && role === "admin"
+      ? [{ href: "/admin", label: "Admin", icon: Users }]
+      : []),
   ];
 
   return (
@@ -86,7 +112,7 @@ export function Navigation() {
                   );
                 })}
                 <div className="pt-4 border-t">
-                  <div className="flex flex-col space-y-2">
+                  <div className="flex flex-col space-y-2 cursor-pointer">
                     {!user ? (
                       <>
                         <Button

@@ -8,17 +8,24 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Heart, Shield, Bell, Settings, BarChart3, Users, Activity, Calendar } from "lucide-react"
+import { Heart, Shield, Bell, Settings, BarChart3, Users, Activity, Calendar, LogOut } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
-import { getDonorProfile, getRecipientProfile } from "@/lib/db"
+import { getDonorProfile, getRecipientProfile, countOrgansRegistered, countActiveMatchesForUser, listActiveMatchesForUser } from "@/lib/db"
 import { useRouter } from "next/navigation"
 
 export default function DashboardPage() {
-  const { user } = useAuth()
+  const { user, signOut } = useAuth()
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [userRole, setUserRole] = useState<"donor" | "recipient" | "admin" | null>(null)
   const [displayName, setDisplayName] = useState<string>("")
+  const [organsCount, setOrgansCount] = useState<number>(0)
+  const [activeMatches, setActiveMatches] = useState<number>(0)
+  const [statsLoading, setStatsLoading] = useState<boolean>(true)
+  const [matching, setMatching] = useState<boolean>(false)
+  const [donorProfile, setDonorProfile] = useState<any | null>(null)
+  const [recipientProfile, setRecipientProfile] = useState<any | null>(null)
+  const [activeMatchList, setActiveMatchList] = useState<any[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -34,6 +41,7 @@ export default function DashboardPage() {
           if (!cancelled) {
             setUserRole("donor")
             setDisplayName(`${donor.firstName || ""} ${donor.lastName || ""}`.trim() || (user.displayName || ""))
+            setDonorProfile(donor)
           }
         } else {
           const recipient = await getRecipientProfile(user.uid)
@@ -41,6 +49,7 @@ export default function DashboardPage() {
             if (!cancelled) {
               setUserRole("recipient")
               setDisplayName(`${recipient.firstName || ""} ${recipient.lastName || ""}`.trim() || (user.displayName || ""))
+              setRecipientProfile(recipient)
             }
           } else {
             if (!cancelled) {
@@ -48,6 +57,12 @@ export default function DashboardPage() {
               setDisplayName(user.displayName || user.email || "User")
             }
           }
+        }
+        // Register/update minimal user record
+        try {
+          await fetch('/api/users/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: user.uid, email: user.email, role: donor ? 'donor' : (recipient ? 'recipient' : 'admin') }) })
+        } catch (e) {
+          console.warn('user register failed', e)
         }
       } finally {
         if (!cancelled) setLoading(false)
@@ -59,11 +74,73 @@ export default function DashboardPage() {
     }
   }, [user, router])
 
+  // Fetch dashboard stats once we know the user
+  useEffect(() => {
+    let cancelled = false
+    async function loadStats() {
+      if (!user) return
+      try {
+        setStatsLoading(true)
+        const [orgCount, matchCount, matchList] = await Promise.all([
+          countOrgansRegistered(user.uid),
+          countActiveMatchesForUser(user.uid),
+          listActiveMatchesForUser(user.uid),
+        ])
+        if (!cancelled) {
+          setOrgansCount(orgCount)
+          setActiveMatches(matchCount)
+          setActiveMatchList(matchList)
+        }
+      } catch (e) {
+        console.error("Dashboard stats error", e)
+      } finally {
+        if (!cancelled) setStatsLoading(false)
+      }
+    }
+    loadStats()
+    return () => {
+      cancelled = true
+    }
+  }, [user])
+
+  // Trigger per-user matching on load
+  useEffect(() => {
+    let cancelled = false
+    async function triggerMatch() {
+      if (!user) return
+      try {
+        setMatching(true)
+        await fetch("/api/match/for-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uid: user.uid }),
+        })
+        // Refresh stats after matching
+        const [orgCount, matchCount, matchList] = await Promise.all([
+          countOrgansRegistered(user.uid),
+          countActiveMatchesForUser(user.uid),
+          listActiveMatchesForUser(user.uid),
+        ])
+        if (!cancelled) {
+          setOrgansCount(orgCount)
+          setActiveMatches(matchCount)
+          setActiveMatchList(matchList)
+        }
+      } catch (e) {
+        console.error("trigger match error", e)
+      } finally {
+        if (!cancelled) setMatching(false)
+      }
+    }
+    triggerMatch()
+    return () => { cancelled = true }
+  }, [user])
+
   const stats = [
-    { label: "Organs Registered", value: "5", icon: Heart, color: "text-primary" },
+    { label: "Organs Registered", value: statsLoading ? "—" : String(organsCount), icon: Heart, color: "text-primary" },
     { label: "Verification Status", value: "Verified", icon: Shield, color: "text-success" },
-    { label: "Active Matches", value: "2", icon: Users, color: "text-warning" },
-    { label: "Lives Impacted", value: "12", icon: Activity, color: "text-chart-1" },
+    { label: "Active Matches", value: statsLoading ? "—" : String(activeMatches), icon: Users, color: "text-warning" },
+    { label: "Lives Impacted", value: statsLoading ? "—" : String(activeMatches), icon: Activity, color: "text-chart-1" },
   ]
 
   const recentActivity = [
@@ -143,6 +220,28 @@ export default function DashboardPage() {
             <Button variant="outline" size="icon">
               <Settings className="h-4 w-4" />
             </Button>
+            <Button variant="default" size="sm" onClick={async () => {
+              if (!user) return
+              setMatching(true)
+              try {
+                await fetch("/api/match/for-user", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ uid: user.uid }) })
+                const [orgCount, matchCount, matchList] = await Promise.all([
+                  countOrgansRegistered(user.uid),
+                  countActiveMatchesForUser(user.uid),
+                  listActiveMatchesForUser(user.uid),
+                ])
+                setOrgansCount(orgCount)
+                setActiveMatches(matchCount)
+                setActiveMatchList(matchList)
+              } finally {
+                setMatching(false)
+              }
+            }} title="Find Matches">
+              {matching ? "Matching..." : "Find Matches"}
+            </Button>
+            <Button variant="outline" size="icon" onClick={signOut} title="Logout">
+              <LogOut className="h-4 w-4" />
+            </Button>
           </div>
         </div>
 
@@ -183,35 +282,58 @@ export default function DashboardPage() {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-4">
-                      <div className="flex items-center justify-between p-4 border rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-success/10">
-                            <Heart className="h-4 w-4 text-success" />
+                      {userRole === "donor" && Array.isArray(donorProfile?.organs) && donorProfile.organs.length > 0 && (
+                        donorProfile.organs.map((org: string, idx: number) => (
+                          <div key={idx} className="flex items-center justify-between p-4 border rounded-lg">
+                            <div className="flex items-center space-x-3">
+                              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-success/10">
+                                <Heart className="h-4 w-4 text-success" />
+                              </div>
+                              <div>
+                                <p className="font-medium">{String(org).charAt(0).toUpperCase() + String(org).slice(1)}</p>
+                                <p className="text-sm text-muted-foreground">Available for donation</p>
+                              </div>
+                            </div>
+                            <Badge variant="outline" className="text-success border-success">Active</Badge>
                           </div>
-                          <div>
-                            <p className="font-medium">Kidney</p>
-                            <p className="text-sm text-muted-foreground">Available for donation</p>
-                          </div>
-                        </div>
-                        <Badge variant="outline" className="text-success border-success">
-                          Active
-                        </Badge>
-                      </div>
+                        ))
+                      )}
 
-                      <div className="flex items-center justify-between p-4 border rounded-lg">
-                        <div className="flex items-center space-x-3">
-                          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-success/10">
-                            <Heart className="h-4 w-4 text-success" />
+                      {userRole === "recipient" && (
+                        <div className="flex items-center justify-between p-4 border rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-success/10">
+                              <Heart className="h-4 w-4 text-success" />
+                            </div>
+                            <div>
+                              <p className="font-medium">{recipientProfile?.organNeeded ? String(recipientProfile.organNeeded).charAt(0).toUpperCase() + String(recipientProfile.organNeeded).slice(1) : "—"}</p>
+                              <p className="text-sm text-muted-foreground">Requested organ</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="font-medium">Liver</p>
-                            <p className="text-sm text-muted-foreground">Available for donation</p>
-                          </div>
+                          <Badge variant="outline" className="text-success border-success">Active</Badge>
                         </div>
-                        <Badge variant="outline" className="text-success border-success">
-                          Active
-                        </Badge>
-                      </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Active Matches</CardTitle>
+                    <CardDescription>Matches found for your registration</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {activeMatchList.length === 0 && <p className="text-sm text-muted-foreground">No active matches yet.</p>}
+                      {activeMatchList.map((m: any) => (
+                        <div key={`${m.donorUid}__${m.recipientUid}`} className="flex items-center justify-between p-3 border rounded-md">
+                          <div className="text-sm">
+                            <div className="font-medium">Match</div>
+                            <div className="text-muted-foreground">Donor: {m.donorUid} • Recipient: {m.recipientUid}</div>
+                          </div>
+                          <Badge variant="outline">Score: {m.score}</Badge>
+                        </div>
+                      ))}
                     </div>
                   </CardContent>
                 </Card>

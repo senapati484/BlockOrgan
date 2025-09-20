@@ -14,7 +14,7 @@ import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Users, User, FileText, Shield, CheckCircle, ArrowLeft, ArrowRight, AlertCircle } from "lucide-react"
 import { useAuth } from "@/components/auth-provider"
-import { saveRecipientProfile } from "@/lib/db"
+import { assertNoExistingRegistration, saveRecipientProfile } from "@/lib/db"
 import { useRouter } from "next/navigation"
 
 interface RecipientFormData {
@@ -118,11 +118,17 @@ export default function RecipientRegistrationPage() {
         router.push("/login")
         return
       }
+      // Prevent duplicate registration across roles
+      await assertNoExistingRegistration(user.uid)
       const payload = { ...formData, role: "recipient", uid: user.uid, email: formData.email || user.email }
       await saveRecipientProfile(user.uid, payload)
       router.push("/recipient/profile")
     } catch (e: any) {
-      setError(e?.message || "Failed to save registration")
+      if (e?.code === "already-registered") {
+        setError(e.message)
+      } else {
+        setError(e?.message || "Failed to save registration")
+      }
     } finally {
       setIsLoading(false)
     }

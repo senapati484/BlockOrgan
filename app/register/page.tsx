@@ -28,6 +28,7 @@ import { Separator } from "@/components/ui/separator";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth-provider";
+import { getExistingRole } from "@/lib/db";
 
 export default function RegisterPage() {
   const [selectedRole, setSelectedRole] = useState<
@@ -52,6 +53,15 @@ export default function RegisterPage() {
       setError("");
       if (!selectedRole) throw new Error("Please choose a role first");
       await signInWithGoogle();
+      // After auth, block re-registration if user already has a profile
+      // We rely on server state via getExistingRole (client reads Firestore)
+      // If already registered, show message and go to dashboard
+      const existing = await getExistingRole((await import("firebase/auth")).getAuth().currentUser!.uid);
+      if (existing) {
+        setError(`You are already registered as ${existing}. Please continue from your dashboard.`);
+        router.push("/dashboard");
+        return;
+      }
       router.push(`/${selectedRole}/register`);
     } catch (e: any) {
       setError(e?.message || "Google sign-in failed");
@@ -68,6 +78,12 @@ export default function RegisterPage() {
       if (!selectedRole) throw new Error("Please choose a role first");
       if (!name) throw new Error("Please enter your name");
       await signUpWithEmail(name, email, password);
+      const existing = await getExistingRole((await import("firebase/auth")).getAuth().currentUser!.uid);
+      if (existing) {
+        setError(`You are already registered as ${existing}. Please continue from your dashboard.`);
+        router.push("/dashboard");
+        return;
+      }
       router.push(`/${selectedRole}/register`);
     } catch (e: any) {
       setError(e?.message || "Sign up failed. Please try again.");
@@ -146,7 +162,8 @@ export default function RegisterPage() {
                   </div>
                 </div>
 
-                <Button className="w-full mt-6" size="lg">
+                <Button className="w-full mt-6" size="lg" onClick={() => handleRoleSelect("donor")}
+                  aria-label="Register as Donor">
                   Register as Donor
                   <ArrowRight className="h-4 w-4 ml-2" />
                 </Button>
@@ -209,6 +226,8 @@ export default function RegisterPage() {
                   className="w-full mt-6 bg-transparent"
                   size="lg"
                   variant="outline"
+                  onClick={() => handleRoleSelect("recipient")}
+                  aria-label="Register as Recipient"
                 >
                   Register as Recipient
                   <ArrowRight className="h-4 w-4 ml-2" />

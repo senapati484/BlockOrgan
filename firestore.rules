@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Private profiles: only owner can read/write
+    match /donors/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /recipients/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    // Subcollections under private profiles
+    match /donors/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /recipients/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // Public projection collections for matching (readable by anyone).
+    // Each user may write only their own public projection document.
+    match /donorsPublic/{uid} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['email','bloodType','organs','dateOfBirth','updatedAt','createdAt']) &&
+        request.resource.data.email is string &&
+        request.resource.data.bloodType is string &&
+        (request.resource.data.organs == null || request.resource.data.organs is list) &&
+        (request.resource.data.dateOfBirth == null || request.resource.data.dateOfBirth is string);
+    }
+    match /recipientsPublic/{uid} {
+      allow read: if true;
+      allow create, update, delete: if request.auth != null && request.auth.uid == uid &&
+        request.resource.data.keys().hasOnly(['email','bloodType','organNeeded','dateOfBirth','updatedAt','createdAt']) &&
+        request.resource.data.email is string &&
+        (request.resource.data.bloodType == null || request.resource.data.bloodType is string) &&
+        request.resource.data.organNeeded is string &&
+        (request.resource.data.dateOfBirth == null || request.resource.data.dateOfBirth is string);
+    }
+
+    // Contact messages: allow unauthenticated create only. No read/update/delete.
+    match /contactMessages/{messageId} {
+      allow create: if
+        request.time != null &&
+        request.resource.data.keys().hasOnly(['name','email','subject','message','createdAt']) &&
+        request.resource.data.name is string &&
+        request.resource.data.email is string &&
+        request.resource.data.subject is string &&
+        request.resource.data.message is string &&
+        request.resource.data.createdAt is number;
+      allow read, update, delete: if false;
+    }
+
+    // Matches and Email Logs: allow create/update for now (development). Optionally restrict later.
+    match /matches/{matchId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if false;
+    }
+    match /emailLogs/{logId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if false;
+    }
+
+    // Public minimal users registry (no sensitive data)
+    match /usersPublic/{uid} {
+      allow read: if true;
+      // Allow server route (unauthenticated) to create limited data
+      allow create, update: if
+        request.resource.data.keys().hasOnly(['uid','email','role','createdAt','updatedAt']) &&
+        request.resource.data.uid is string &&
+        request.resource.data.email is string &&
+        request.resource.data.role in ['donor','recipient','admin'] &&
+        request.resource.data.createdAt is number;
+      allow delete: if false;
+    }
+  }
+}
